@@ -3605,6 +3605,7 @@ fn core_turn_item_into_thread_item_converts_supported_variants() {
         agent_path: codex_protocol::AgentPath::root()
             .join("worker")
             .expect("worker path"),
+        message: Some("Analyze the authentication flow".to_string()),
     });
 
     assert_eq!(
@@ -3616,6 +3617,7 @@ fn core_turn_item_into_thread_item_converts_supported_variants() {
             kind: SubAgentActivityKind::Started,
             agent_thread_id: receiver_thread_id.to_string(),
             agent_path: "/root/worker".to_string(),
+            message: Some("Analyze the authentication flow".to_string()),
         }
     );
 

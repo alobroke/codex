@@ -1205,6 +1205,7 @@ impl ThreadHistoryBuilder {
             kind: payload.kind.into(),
             agent_thread_id: payload.agent_thread_id.to_string(),
             agent_path: String::from(payload.agent_path.clone()),
+            message: None,
         };
         let times = ItemTimes::legacy_completion(payload.occurred_at_ms);
         self.upsert_item(/*turn_id*/ None, item, times);
@@ -5638,6 +5639,7 @@ mod tests {
                 kind: CoreSubAgentActivityKind::Started,
                 agent_thread_id: child_thread_id,
                 agent_path: child_path.clone(),
+                message: None,
             }),
             started_at_ms: Some(1),
             completed_at_ms: 2,
@@ -5689,6 +5691,7 @@ mod tests {
                         kind: CoreSubAgentActivityKind::Completed,
                         agent_thread_id: child_thread_id,
                         agent_path: child_path.clone(),
+                        message: None,
                     }),
                     started_at_ms: None,
                     completed_at_ms: 0,

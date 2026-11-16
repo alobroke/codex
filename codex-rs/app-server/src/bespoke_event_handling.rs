@@ -3356,6 +3356,7 @@ mod tests {
                         agent_thread_id: child_thread_id,
                         agent_path: AgentPath::try_from("/root/worker")
                             .expect("agent path should parse"),
+                        message: None,
                     }),
                     started_at_ms: Some(42),
                     completed_at_ms: 42,

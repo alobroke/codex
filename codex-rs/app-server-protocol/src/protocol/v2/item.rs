@@ -490,6 +490,10 @@ pub enum ThreadItemPayload {
         kind: SubAgentActivityKind,
         agent_thread_id: String,
         agent_path: String,
+        /// Plaintext message sent to the sub-agent, when safe to expose.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        message: Option<String>,
     },
     WebSearch(WebSearchItem),
     #[serde(rename_all = "camelCase")]
@@ -1076,6 +1080,7 @@ impl From<CoreTurnItem> for ThreadItemPayload {
                 kind: activity.kind.into(),
                 agent_thread_id: activity.agent_thread_id.to_string(),
                 agent_path: String::from(activity.agent_path),
+                message: activity.message,
             },
             CoreTurnItem::WebSearch(search) => Self::WebSearch(WebSearchItem {
                 id: search.id,

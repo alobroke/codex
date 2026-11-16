@@ -46,7 +46,6 @@ pub(super) async fn handle_message_string_tool(
     message: String,
     analytics: &mut ToolCallAnalytics,
 ) -> Result<FunctionToolOutput, FunctionCallError> {
-    let message = message_content(message)?;
     let ToolInvocation {
         session,
         turn,
@@ -54,6 +53,10 @@ pub(super) async fn handle_message_string_tool(
         source,
         ..
     } = invocation;
+
+    let message = message_content(message)?;
+    let agent_message = agent_message_from_tool(message, &source);
+    let activity_message = message_for_activity(&agent_message);
     let receiver_thread_id = resolve_agent_target(&session, &turn, &target).await?;
     analytics.set_receiver(receiver_thread_id);
     let resume_config =
@@ -66,7 +69,7 @@ pub(super) async fn handle_message_string_tool(
             target: AgentTarget::Id(receiver_thread_id),
             resume_config,
             input: AgentInput::Message {
-                message: agent_message_from_tool(message, &source),
+                message: agent_message,
                 mode,
             },
             start_options: TurnStartOptions {
@@ -89,6 +92,7 @@ pub(super) async fn handle_message_string_tool(
         SubAgentActivityItem {
             model: None,
             reasoning_effort: None,
+            message: activity_message,
             id: call_id,
             agent_thread_id: receiver_thread_id,
             agent_path: receiver_agent_path,

@@ -65,3 +65,32 @@ fn agent_message_from_tool(
         AgentMessage::Encrypted(message)
     }
 }
+
+fn message_for_activity(message: &AgentMessage) -> Option<String> {
+    match message {
+        AgentMessage::Plaintext(message) => Some(message.clone()),
+        AgentMessage::Encrypted(_) => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn plaintext_message_is_included_in_activity() {
+        let message = AgentMessage::Plaintext("Analyze the authentication flow".to_string());
+
+        assert_eq!(
+            message_for_activity(&message),
+            Some("Analyze the authentication flow".to_string())
+        );
+    }
+
+    #[test]
+    fn encrypted_message_is_not_included_in_activity() {
+        let message = AgentMessage::Encrypted("encrypted-payload".to_string());
+
+        assert_eq!(message_for_activity(&message), None);
+    }
+}

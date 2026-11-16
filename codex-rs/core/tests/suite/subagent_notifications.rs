@@ -2965,6 +2965,7 @@ async fn plaintext_multi_agent_v2_completion_sends_agent_message(
                 agent_path: codex_protocol::AgentPath::root()
                     .join("worker")
                     .expect("worker path"),
+                message: None,
             }
         );
     } else {
@@ -3283,6 +3284,7 @@ async fn multi_agent_v2_peer_followup_completion_notifies_initiating_turn(
                 agent_path: codex_protocol::AgentPath::root()
                     .join("worker")
                     .expect("worker path"),
+                message: None,
             },
         )
     );
