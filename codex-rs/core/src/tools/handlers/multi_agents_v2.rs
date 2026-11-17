@@ -93,4 +93,46 @@ mod tests {
 
         assert_eq!(message_for_activity(&message), None);
     }
+
+    #[test]
+    fn direct_tool_message_is_encrypted() {
+        let message = agent_message_from_tool(
+            "sensitive payload".to_string(),
+            &crate::tools::context::ToolCallSource::Direct,
+        );
+
+        assert_eq!(
+            message,
+            AgentMessage::Encrypted("sensitive payload".to_string())
+        );
+    }
+
+    #[test]
+    fn direct_plaintext_tool_message_is_plaintext() {
+        let message = agent_message_from_tool(
+            "Analyze the authentication flow".to_string(),
+            &crate::tools::context::ToolCallSource::DirectPlaintextMessage,
+        );
+
+        assert_eq!(
+            message,
+            AgentMessage::Plaintext("Analyze the authentication flow".to_string())
+        );
+    }
+
+    #[test]
+    fn code_mode_tool_message_is_plaintext() {
+        let message = agent_message_from_tool(
+            "Inspect the API routes".to_string(),
+            &crate::tools::context::ToolCallSource::CodeMode {
+                cell_id: "cell-1".to_string(),
+                runtime_tool_call_id: "call-1".to_string(),
+            },
+        );
+
+        assert_eq!(
+            message,
+            AgentMessage::Plaintext("Inspect the API routes".to_string())
+        );
+    }
 }

@@ -2429,6 +2429,31 @@ async fn multi_agent_v2_spawn_sends_agent_message_to_child(
     let root_thread_id = test.session_configured.thread_id;
 
     test.submit_text_turn(TURN_1_PROMPT).await?;
+    let started_activity = timeout(Duration::from_secs(5), async {
+        loop {
+            let event = test
+                .codex
+                .next_event()
+                .await
+                .expect("event stream should remain open");
+
+            if let EventMsg::ItemStarted(event) = event.msg
+                && let TurnItem::SubAgentActivity(activity) = event.item
+                && activity.id == SPAWN_CALL_ID
+                && activity.kind == SubAgentActivityKind::Started
+            {
+                break activity;
+            }
+        }
+    })
+    .await
+    .expect("timed out waiting for spawn activity");
+
+    assert_eq!(
+        started_activity.message.as_deref(),
+        if plaintext { Some(message) } else { None },
+        "live spawn activity should expose plaintext only",
+    );
     test.codex.ensure_rollout_materialized().await;
     test.codex.flush_rollout().await?;
     let rollout = codex_rollout::RolloutRecorder::get_rollout_history(
@@ -2440,15 +2465,21 @@ async fn multi_agent_v2_spawn_sends_agent_message_to_child(
         .iter()
         .find_map(|item| match item {
             RolloutItem::EventMsg(EventMsg::ItemCompleted(completed)) => match &completed.item {
-                TurnItem::SubAgentActivity(activity) if activity.id == SPAWN_CALL_ID => {
-                    Some((activity.model.clone(), activity.reasoning_effort.clone()))
-                }
+                TurnItem::SubAgentActivity(activity) if activity.id == SPAWN_CALL_ID => Some((
+                    activity.model.clone(),
+                    activity.reasoning_effort.clone(),
+                    activity.message.clone(),
+                )),
                 _ => None,
             },
             RolloutItem::EventMsg(EventMsg::SubAgentActivity(activity))
                 if activity.event_id == SPAWN_CALL_ID =>
             {
-                Some((activity.model.clone(), activity.reasoning_effort.clone()))
+                Some((
+                    activity.model.clone(),
+                    activity.reasoning_effort.clone(),
+                    activity.message.clone(),
+                ))
             }
             _ => None,
         })
@@ -2473,6 +2504,11 @@ async fn multi_agent_v2_spawn_sends_agent_message_to_child(
     let expected_settings = (
         Some(model.unwrap_or(parent_model)),
         expected_reasoning_effort,
+    );
+    assert_eq!(
+        settings.2.as_deref(),
+        if plaintext { Some(message) } else { None },
+        "persisted spawn activity should expose plaintext only",
     );
     assert_eq!(
         (
@@ -3096,6 +3132,14 @@ async fn multi_agent_v2_peer_followup_completion_notifies_initiating_turn(
         "target": "/root/worker",
         "message": WORKER_FOLLOWUP_TASK,
     }))?;
+    let mut followup_event = ev_function_call_with_namespace(
+        FOLLOWUP_CALL_ID,
+        MULTI_AGENT_V2_NAMESPACE,
+        "followup_task",
+        &followup_args,
+    );
+    followup_event["item"]["encrypted_function_args"] = json!([]);
+
     mount_sse_once_match(
         &server,
         |request: &wiremock::Request| {
@@ -3106,12 +3150,7 @@ async fn multi_agent_v2_peer_followup_completion_notifies_initiating_turn(
         },
         sse(vec![
             ev_response_created("resp-routing-requester"),
-            ev_function_call_with_namespace(
-                FOLLOWUP_CALL_ID,
-                MULTI_AGENT_V2_NAMESPACE,
-                "followup_task",
-                &followup_args,
-            ),
+            followup_event,
             ev_completed("resp-routing-requester"),
         ]),
     )
@@ -3168,6 +3207,34 @@ async fn multi_agent_v2_peer_followup_completion_notifies_initiating_turn(
         _ => None,
     })
     .await;
+    let interacted = timeout(
+        Duration::from_secs(5),
+        wait_for_event_match(requester_thread.as_ref(), |event| match event {
+            EventMsg::ItemCompleted(completed)
+                if matches!(
+                    &completed.item,
+                    TurnItem::SubAgentActivity(activity)
+                        if activity.kind == SubAgentActivityKind::Interacted
+                            && activity.id == FOLLOWUP_CALL_ID
+                            && activity.agent_thread_id == worker_thread_id
+                ) =>
+            {
+                Some(completed.clone())
+            }
+            _ => None,
+        }),
+    )
+    .await?;
+
+    let TurnItem::SubAgentActivity(interacted_item) = interacted.item else {
+        unreachable!("interaction event should contain sub-agent activity");
+    };
+
+    assert_eq!(
+        interacted_item.message.as_deref(),
+        Some(WORKER_FOLLOWUP_TASK)
+    );
+
     wait_for_event(requester_thread.as_ref(), |event| {
         matches!(event, EventMsg::TurnComplete(_))
     })
@@ -3249,6 +3316,7 @@ async fn multi_agent_v2_peer_followup_completion_notifies_initiating_turn(
         let request = wake_request.single_request();
         assert_parent_turn(&request.body_json(), Some(&requester_turn_id))?;
     }
+
     let completed = timeout(
         Duration::from_secs(5),
         wait_for_event_match(requester_thread.as_ref(), |event| match event {
@@ -3287,6 +3355,44 @@ async fn multi_agent_v2_peer_followup_completion_notifies_initiating_turn(
                 message: None,
             },
         )
+    );
+    requester_thread.ensure_rollout_materialized().await;
+    requester_thread.flush_rollout().await?;
+
+    let rollout = codex_rollout::RolloutRecorder::get_rollout_history(
+        &requester_thread
+            .rollout_path()
+            .expect("requester rollout path"),
+    )
+    .await?;
+
+    let persisted_followup_message = rollout
+        .get_rollout_items()
+        .iter()
+        .find_map(|item| match item {
+            RolloutItem::EventMsg(EventMsg::ItemCompleted(completed)) => match &completed.item {
+                TurnItem::SubAgentActivity(activity)
+                    if activity.id == FOLLOWUP_CALL_ID
+                        && activity.kind == SubAgentActivityKind::Interacted =>
+                {
+                    Some(activity.message.clone())
+                }
+                _ => None,
+            },
+            RolloutItem::EventMsg(EventMsg::SubAgentActivity(activity))
+                if activity.event_id == FOLLOWUP_CALL_ID
+                    && activity.kind == SubAgentActivityKind::Interacted =>
+            {
+                Some(activity.message.clone())
+            }
+            _ => None,
+        })
+        .expect("persisted follow-up interaction activity");
+
+    assert_eq!(
+        persisted_followup_message.as_deref(),
+        Some(WORKER_FOLLOWUP_TASK),
+        "persisted follow-up activity should retain the plaintext message",
     );
 
     // Fresh turn input is sampled before queued mail is drained. Let that first

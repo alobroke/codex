@@ -5708,6 +5708,7 @@ mod tests {
                     &ThreadItemPayload::SubAgentActivity {
                         model: None,
                         reasoning_effort: None,
+                        message: None,
                         id: "child-turn-completed".into(),
                         kind: crate::protocol::v2::SubAgentActivityKind::Completed,
                         agent_thread_id: child_thread_id.to_string(),
